@@ -74,7 +74,7 @@ class WeightsBiasesTracker:
             dir=self.wandb_dir,
             config=self.hparams,
             project=self.project,
-            entity=self.entity,
+            # entity=self.entity,
             group=self.group,
         )
 

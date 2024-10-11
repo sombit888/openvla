@@ -28,13 +28,13 @@ import torch.distributed as dist
 import yaml
 
 from prismatic.conf import VLAConfig, VLARegistry
-from prismatic.models import load, load_vla
+from prismatic.models import load, load_vla, load_vla_custom,load_vla_custom_alpha, load_vla_custom_both
 from prismatic.overwatch import initialize_overwatch
 from prismatic.training import VLAMetrics, get_train_strategy
 from prismatic.util import set_global_seed
 from prismatic.vla import get_vla_dataset_and_collator
 from prismatic.vla.datasets.rlds.utils.data_utils import save_dataset_statistics
-
+import pdb
 # Sane Defaults
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -51,6 +51,9 @@ class TrainConfig:
     vla: VLAConfig = field(
         default_factory=VLAConfig.get_choice_class(VLARegistry.DINOSIGLIP_224PX_MX_OXE_MAGIC_SOUP_PLUS.vla_id)
     )
+    # vla: VLAConfig = field(
+    #     default_factory=VLAConfig.get_choice_class(VLARegistry.SIGLIP_224PX_MX_DROID_WIPE.vla_id)
+    # )
 
     # Directory Paths
     data_root_dir: Path = Path(                                     # Path to Open-X dataset directory
@@ -66,7 +69,7 @@ class TrainConfig:
     resume_epoch: Optional[int] = None                              # Epoch to Resume (should match checkpoint)
 
     # Run Arguments
-    run_id: Optional[str] = None                                    # Run ID for logging, Weights & Biases
+    run_id: Optional[str] = 'finetune_fractal'                                    # Run ID for logging, Weights & Biases
     run_id_note: Optional[str] = None                               # Extra note for logging, Weights & Biases
     save_interval: int = 2500                                       # Interval for saving checkpoints (in steps)
     image_aug: bool = False                                         # Whether to enable image augmentations
@@ -78,7 +81,7 @@ class TrainConfig:
     # Tracking Parameters
     trackers: Tuple[str, ...] = ("jsonl", "wandb")                  # Trackers to initialize (if W&B, add config!)
     wandb_project: str = "openvla"                                  # Name of W&B project to log to (use default!)
-    wandb_entity: str = "stanford-voltron"                          # Name of entity to log under
+    # wandb_entity: str = "stanford-voltron"                          # Name of entity to log under
 
     def __post_init__(self) -> None:
         """Lift optimization parameters from `self.vla` for ease of use =>> validate on `expected_world_size`"""
@@ -146,16 +149,17 @@ def train(cfg: TrainConfig) -> None:
         if cfg.is_resume:
             assert int(re.search("step-(.+?)-", cfg.pretrained_checkpoint.name).group(1)) == cfg.resume_step
             assert int(re.search("epoch-(.+?)-", cfg.pretrained_checkpoint.name).group(1)) == cfg.resume_epoch
+        print(f"Loading pretrained checkpoint from {cfg.pretrained_checkpoint}")
 
-        vlm = load_vla(cfg.pretrained_checkpoint, hf_token=hf_token, load_for_training=True)
-
+        vlm = load_vla(cfg.pretrained_checkpoint, hf_token=hf_token, load_for_training=True)    
+        # vlm = load_vla_custom(cfg.pretrained_checkpoint, hf_token=hf_token, load_for_training=True) ## EXP1 : Flip Dino
+        # vlm = load_vla_custom_alpha(cfg.pretrained_checkpoint, hf_token=hf_token, load_for_training=True,alpha=1.0)    ## EXP2 : Linear Transition Dino
+        # vlm = load_vla_custom_both(cfg.pretrained_checkpoint, hf_token=hf_token, load_for_training=True)
     else:
         vlm = load(cfg.vla.base_vlm, hf_token=hf_token, load_for_training=True)
-
     # [Validate] Model should be in Full Precision!
     for param in vlm.parameters():
         assert param.dtype == torch.float32, f"Loaded VLM parameter not in full precision: {param}"
-
     # Determine training "stage" based on frozen vs unfrozen parameters --> supports different fine-tuning schemes!
     if not cfg.vla.freeze_vision_backbone and not cfg.vla.freeze_llm_backbone:
         stage = "vla-full-train"  # Full fine-tuning
@@ -234,7 +238,7 @@ def train(cfg: TrainConfig) -> None:
         run_dir,
         draccus.encode(cfg),
         wandb_project=cfg.wandb_project,
-        wandb_entity=cfg.wandb_entity,
+        # wandb_entity=cfg.wandb_entity,
         resume_step=cfg.resume_step,
         resume_epoch=cfg.resume_epoch,
     )

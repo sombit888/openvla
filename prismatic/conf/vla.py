@@ -75,10 +75,10 @@ class Exp_SigLIP_224px_Bridge(VLAConfig):
     shuffle_buffer_size: int = 256_000
 
     # Optimization Parameters
-    epochs: int = 1000
+    epochs: int = 10
     max_steps: Optional[int] = None
 
-    expected_world_size: int = 8
+    expected_world_size: int = 8 
     global_batch_size: int = 256
     per_device_batch_size: int = 32
 
@@ -106,6 +106,106 @@ class Exp_DinoSigLIP_224px_Bridge(Exp_SigLIP_224px_Bridge):
     base_vlm: Union[str, Path] = "prism-dinosiglip-224px+7b"
 
     data_mix: str = "bridge"
+
+@dataclass
+class Exp_DinoSigLIP_224px_Bridge_debug(Exp_SigLIP_224px_Bridge):
+    vla_id: str = "prism-dinosiglip-224px+mx-bridge_debug"
+    base_vlm: Union[str, Path] = "prism-dinosiglip-224px+7b"
+
+    data_mix: str = "fractal"
+    expected_world_size: int = 8
+    global_batch_size: int = 32
+    per_device_batch_size: int = 4
+    learning_rate: float = 2e-5 
+    
+    
+@dataclass
+class Exp_DinoSigLIP_224px_Bridge_debug_e6(Exp_SigLIP_224px_Bridge):
+    vla_id: str = "prism-dinosiglip-224px+mx-bridge_debug_e6"
+    base_vlm: Union[str, Path] = "prism-dinosiglip-224px+7b"
+
+    # data_mix: str = "fractal"
+    data_mix: str= 'bridge'
+    # data_mix: str = "oxe_magic_soup_plus_minus"
+    expected_world_size: int = 8
+    global_batch_size: int = 64
+    per_device_batch_size: int = 8
+    learning_rate: float = 5e-6
+    # lr_scheduler_type: str = "linear-warmup+cosine-decay"
+    # warmup_ratio: float = 0.0001
+    lr_scheduler_type: str = "constant"
+    warmup_ratio: float = 0.0
+    freeze_vision_backbone: bool = True 
+    freeze_llm_backbone: bool = False
+    shuffle_buffer_size: int = 256_000
+    # unfreeze_last_llm_layer: bool = True
+# @dataclass
+# class Exp_DinoSigLIP_224px_Bridge_debug_e6(Exp_SigLIP_224px_Bridge):
+#     vla_id: str = "prism-dinosiglip-224px+mx-bridge_debug"
+#     base_vlm: Union[str, Path] = "prism-dinosiglip-224px+7b"
+
+#     data_mix: str = "fractal"
+#     expected_world_size: int = 8
+#     global_batch_size: int = 256
+#     per_device_batch_size: int = 4
+#     learning_rate: float = 2e-5
+@dataclass
+class Exp_DinoSigLIP_224px_Bridge_debug_e6_test(Exp_SigLIP_224px_Bridge):
+    vla_id: str = "prism-dinosiglip-224px+mx-bridge_debug_e6_test"
+    base_vlm: Union[str, Path] = "prism-dinosiglip-224px+7b"
+
+    data_mix: str = "bridge"
+    # data_mix: str = "oxe_magic_soup_plus_minus"
+    expected_world_size: int = 1
+    global_batch_size: int = 8
+    per_device_batch_size: int = 8
+    learning_rate: float = 5e-6
+    # lr_scheduler_type: str = "linear-warmup+cosine-decay"
+    # warmup_ratio: float = 0.0001
+    lr_scheduler_type: str = "constant"
+    warmup_ratio: float = 0.0
+    freeze_vision_backbone: bool = True 
+    freeze_llm_backbone: bool = False
+    shuffle_buffer_size: int = 256_000
+    # unfreeze_last_llm_layer: bool = True
+# @dataclass
+# class Exp_DinoSigLIP_224px_Bridge_debug_e6(Exp_SigLIP_224px_Bridge):
+#     vla_id: str = "prism-dinosiglip-224px+mx-bridge_debug"
+#     base_vlm: Union[str, Path] = "prism-dinosiglip-224px+7b"
+
+#     data_mix: str = "fractal"
+#     expected_world_size: int = 8
+#     global_batch_size: int = 256
+#     per_device_batch_size: int = 4
+#  
+@dataclass
+class Exp_DinoSigLIP_224px_Fractal(Exp_SigLIP_224px_Bridge):
+    vla_id: str = "prism-dinosiglip-224px+mx-fractal"
+    base_vlm: Union[str, Path] = "prism-dinosiglip-224px+7b"
+
+    data_mix: str = "fractal"
+    freeze_vision_backbone: bool = True
+    freeze_llm_backbone: bool = False
+    unfreeze_last_llm_layer: bool = True
+
+    # Data Mixture Parameters
+    shuffle_buffer_size: int = 256_000
+
+    # Optimization Parameters
+    epochs: int = 10
+    max_steps: Optional[int] = None
+
+    expected_world_size: int = 8 
+    global_batch_size: int = 256
+    per_device_batch_size: int = 32
+
+    learning_rate: float = 2e-5
+    weight_decay: float = 0.0
+    max_grad_norm: float = 1.0
+    lr_scheduler_type: str = "constant"
+    warmup_ratio: float = 0.0
+
+    train_strategy: str = "fsdp-full-shard"
 
 
 # = [64 GPU] SigLIP 224px + OXE Magic Soup =
@@ -204,7 +304,10 @@ class VLARegistry(Enum):
     # Sanity Check Configurations =>> BridgeV2
     SIGLIP_224PX_MX_BRIDGE = Exp_SigLIP_224px_Bridge
     DINOSIGLIP_224PX_MX_BRIDGE = Exp_DinoSigLIP_224px_Bridge
-
+    DINOSIGLIP_224PX_MX_BRIDGE_debug = Exp_DinoSigLIP_224px_Bridge_debug
+    DINOSIGLIP_224PX_MX_BRIDGE_debug_e6 = Exp_DinoSigLIP_224px_Bridge_debug_e6
+    DINOSIGLIP_224PX_MX_BRIDGE_debug_e6_test = Exp_DinoSigLIP_224px_Bridge_debug_e6_test
+    DINOSIGLIP_224PX_MX_Fractal= Exp_DinoSigLIP_224px_Fractal
     # SigLIP Frozen Backbone Experiment
     FREEZE_SIGLIP_224PX_MX_BRIDGE = Exp_FreezeVIT_SigLIP_224px_Bridge
 

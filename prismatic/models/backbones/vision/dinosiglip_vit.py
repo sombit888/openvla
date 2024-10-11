@@ -47,6 +47,7 @@ class DinoSigLIPViTBackbone(VisionBackbone):
         self.siglip_timm_path_or_url = DINOSigLIP_VISION_BACKBONES[vision_backbone_id]["siglip"]
 
         # Initialize both Featurizers (ViTs) by downloading from HF / TIMM Hub if necessary
+        
         self.dino_featurizer: VisionTransformer = timm.create_model(
             self.dino_timm_path_or_url, pretrained=True, num_classes=0, img_size=self.default_image_size
         )
@@ -145,6 +146,11 @@ class DinoSigLIPViTBackbone(VisionBackbone):
         siglip_patches = self.siglip_featurizer(pixel_values["siglip"])
 
         return torch.cat([dino_patches, siglip_patches], dim=2)
+    def reset_dinofeatures(self):
+        self.dino_featurizer: VisionTransformer = timm.create_model(
+            self.dino_timm_path_or_url, pretrained=True, num_classes=0, img_size=self.default_image_size
+        )
+        return
 
     @property
     def default_image_resolution(self) -> Tuple[int, int, int]:

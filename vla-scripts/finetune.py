@@ -35,17 +35,19 @@ from torch.optim import AdamW
 from torch.utils.data import DataLoader
 from transformers import AutoModelForVision2Seq, AutoProcessor, BitsAndBytesConfig
 from transformers.modeling_outputs import CausalLMOutputWithPast
-
+import timm
 import wandb
 from prismatic.models.backbones.llm.prompting import PurePromptBuilder, VicunaV15ChatPromptBuilder
 from prismatic.util.data_utils import PaddedCollatorForActionPrediction
 from prismatic.vla.action_tokenizer import ActionTokenizer
 from prismatic.vla.datasets import RLDSBatchTransform, RLDSDataset
 from prismatic.vla.datasets.rlds.utils.data_utils import save_dataset_statistics
-
+from transformers import AutoImageProcessor, AutoModel
+import pdb 
+from scripts.extern.convert_prismatic_weights_to_hf import LayerScale, ls_apply_patch 
 # Sane Defaults
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-
+import pdb 
 
 # # === Utilities ===
 # # fmt: off
@@ -72,15 +74,20 @@ class FinetuneConfig:
     vla_path: str = "openvla/openvla-7b"                            # Path to OpenVLA model (on HuggingFace Hub)
 
     # Directory Paths
-    data_root_dir: Path = Path("datasets/open-x-embodiment")        # Path to Open-X dataset directory
-    dataset_name: str = "droid_wipe"                                # Name of fine-tuning dataset (e.g., `droid_wipe`)
-    run_root_dir: Path = Path("runs")                               # Path to directory to store logs & checkpoints
-    adapter_tmp_dir: Path = Path("adapter-tmp")                     # Temporary directory for LoRA weights before fusing
+    # data_root_dir: Path = Path("datasets/open-x-embodiment")        # Path to Open-X dataset directory
+    data_root_dir: Path = Path("/data/work2-gcp-europe-west4-a/nikolay_nikolov/datasets/oxe/resized")                      # Path to RLDS dataset directory
+    
+    dataset_name: str = "fractal20220817_data"                                # Name of fine-tuning dataset (e.g., `droid_wipe`)
+    # data_root_dir: Path = Path("/scratch/sombit_dey/openvla_test/")
+    # dataset_name: str = "viola
+    
+    run_root_dir: Path = Path("/scratch/sombit_dey/hmm/runs")                               # Path to directory to store logs & checkpoints
+    adapter_tmp_dir: Path = Path("/scratch/sombit_dey/linear+inter/adapter-tmp")                     # Temporary directory for LoRA weights before fusing
 
     # Fine-tuning Parameters
-    batch_size: int = 16                                            # Fine-tuning batch size
+    batch_size: int = 1                                            # Fine-tuning batch size
     max_steps: int = 200_000                                        # Max number of fine-tuning steps
-    save_steps: int = 5000                                          # Interval for checkpoint saving
+    save_steps: int = 50                                            # Interval for checkpoint saving
     learning_rate: float = 2e-5                                     # Fine-tuning learning rate
     grad_accumulation_steps: int = 1                                # Gradient accumulation steps
     image_aug: bool = True                                          # Whether to train with image augmentations
@@ -90,20 +97,20 @@ class FinetuneConfig:
     use_lora: bool = True                                           # Whether to use LoRA fine-tuning
     lora_rank: int = 32                                             # Rank of LoRA weight matrix
     lora_dropout: float = 0.0                                       # Dropout applied to LoRA weights
-    use_quantization: bool = False                                  # Whether to 4-bit quantize VLA for LoRA fine-tuning
+    use_quantization: bool = False                                   # Whether to 4-bit quantize VLA for LoRA fine-tuning
                                                                     #   => CAUTION: Reduces memory but hurts performance
 
     # Tracking Parameters
     wandb_project: str = "openvla"                                  # Name of W&B project to log to (use default!)
-    wandb_entity: str = "stanford-voltron"                          # Name of entity to log under
-
+    # wandb_entity: str = f"finetune_{dataset_name}"                          # Name of entity to log under
+    debug: bool = True                                             # Whether to run in debug mode
     # fmt: on
 
 
 @draccus.wrap()
 def finetune(cfg: FinetuneConfig) -> None:
     print(f"Fine-tuning OpenVLA Model `{cfg.vla_path}` on `{cfg.dataset_name}`")
-
+    debug = cfg.debug
     # [Validate] Ensure GPU Available & Set Device / Distributed Context
     assert torch.cuda.is_available(), "Fine-tuning assumes at least one GPU is available!"
     distributed_state = PartialState()
@@ -142,13 +149,25 @@ def finetune(cfg: FinetuneConfig) -> None:
         low_cpu_mem_usage=True,
         trust_remote_code=True,
     )
+    ## change the vision backbone to different weights  
+    # model = AutoModel.from_pretrained('facebook/dinov2-base')
+    direct_subs = False
+    if(direct_subs):
+        model = timm.create_model("vit_large_patch14_reg4_dinov2.lvd142m", pretrained=True, num_classes=0, img_size=224) 
+        for module in model.modules():
+            if isinstance(module, LayerScale):
+                ls_apply_patch(module)
+        vla.vision_backbone.featurizer.load_state_dict(model.state_dict())
+        del model,module
+    torch.cuda.empty_cache()
 
+    # print(sum(p.numel() for p in model.parameters()))
     # Device Placement =>> note that BitsAndBytes automatically handles for quantized training
     if cfg.use_quantization:
         vla = prepare_model_for_kbit_training(vla)
     else:
         vla = vla.to(device_id)
-
+    breakpoint()
     # [LoRA] Wrap Model w/ PEFT `LoraConfig` =>> by default we set `target_modules=all-linear`
     if cfg.use_lora:
         lora_config = LoraConfig(
@@ -158,9 +177,8 @@ def finetune(cfg: FinetuneConfig) -> None:
             target_modules="all-linear",
             init_lora_weights="gaussian",
         )
-        vla = get_peft_model(vla, lora_config)
-        vla.print_trainable_parameters()
-
+        vla.language_model = get_peft_model(vla.language_model, lora_config)
+        vla.language_model.print_trainable_parameters()
     # Wrap VLA in PyTorch DDP Wrapper for Multi-GPU Training
     vla = DDP(vla, device_ids=[device_id], find_unused_parameters=True, gradient_as_bucket_view=True)
 
@@ -203,7 +221,10 @@ def finetune(cfg: FinetuneConfig) -> None:
 
     # [Important] Save Dataset Statistics =>> used to de-normalize actions for inference!
     if distributed_state.is_main_process:
-        save_dataset_statistics(vla_dataset.dataset_statistics, run_dir)
+        if not os.path.exists(run_dir / "dataset_statistics.json"):
+            save_dataset_statistics(vla_dataset.dataset_statistics, run_dir)
+        else:
+            print(f"Dataset Statistics already exist at {run_dir} / 'dataset_statistics.json'")
 
     # Create Collator and DataLoader
     collator = PaddedCollatorForActionPrediction(
@@ -218,8 +239,9 @@ def finetune(cfg: FinetuneConfig) -> None:
     )
 
     # Initialize Logging =>> W&B
-    if distributed_state.is_main_process:
-        wandb.init(entity=cfg.wandb_entity, project=cfg.wandb_project, name=f"ft+{exp_id}")
+    if distributed_state.is_main_process and not debug:
+        # wandb.init(entity=cfg.wandb_entity, project=cfg.wandb_project, name=f"ft+{exp_id}")
+        wandb.init(project=cfg.wandb_project, name=f"ft+{exp_id}+linear+inter")
 
     # Deque to store recent train metrics (used for computing smoothened metrics for gradient accumulation)
     recent_losses = deque(maxlen=cfg.grad_accumulation_steps)
@@ -227,7 +249,7 @@ def finetune(cfg: FinetuneConfig) -> None:
     recent_l1_losses = deque(maxlen=cfg.grad_accumulation_steps)
 
     # Train!
-    with tqdm.tqdm(total=cfg.max_steps, leave=False) as progress:
+    with tqdm.tqdm(total=cfg.max_steps, leave=False) as progress: 
         vla.train()
         optimizer.zero_grad()
         for batch_idx, batch in enumerate(dataloader):
@@ -281,7 +303,7 @@ def finetune(cfg: FinetuneConfig) -> None:
             smoothened_l1_loss = sum(recent_l1_losses) / len(recent_l1_losses)
 
             # Push Metrics to W&B (every 10 gradient steps)
-            if distributed_state.is_main_process and gradient_step_idx % 10 == 0:
+            if distributed_state.is_main_process and gradient_step_idx % 10 == 0 and not debug:
                 wandb.log(
                     {"train_loss": smoothened_loss, "action_accuracy": smoothened_action_accuracy, "l1_loss": smoothened_l1_loss}, step=gradient_step_idx
                 )
@@ -293,9 +315,13 @@ def finetune(cfg: FinetuneConfig) -> None:
                 progress.update()
 
             # Save Model Checkpoint =>> by default, only keeps the latest checkpoint, continually overwriting it!
+
+
             if gradient_step_idx > 0 and gradient_step_idx % cfg.save_steps == 0:
+            
                 if distributed_state.is_main_process:
                     print(f"Saving Model Checkpoint for Step {gradient_step_idx}")
+                    
 
                     # If LoRA, we first save adapter weights, then merge into full model; otherwise, default save!
                     save_dir = adapter_dir if cfg.use_lora else run_dir
@@ -320,6 +346,31 @@ def finetune(cfg: FinetuneConfig) -> None:
 
                 # Block on Main Process Checkpointing
                 dist.barrier()
+                ### interpolate the weights of the vision backbone 
+                model = timm.create_model("vit_large_patch14_reg4_dinov2.lvd142m", pretrained=True, num_classes=0, img_size=224)
+                # for module in model.modules():
+                #     if isinstance(module, LayerScale):
+                #         ls_apply_patch(module)
+                for module in model.modules():
+                    if isinstance(module, LayerScale):
+                        ls_apply_patch(module)
+                old_state_dict = vla.module.vision_backbone.featurizer.state_dict()
+                new_state_dict = model.state_dict()
+                del model 
+                torch.cuda.empty_cache()
+                # ##interpolate based on the gradient step
+                alpha = gradient_step_idx / (cfg.save_steps*10.0)
+                breakpoint()
+                alpha = min(alpha,1.0)
+                for key in old_state_dict:
+                    new_state_dict[key] = alpha * new_state_dict[key] + (1-alpha) * old_state_dict[key]
+                breakpoint()
+                
+                vla.vision_backbone.featurizer.load_state_dict(new_state_dict)
+                # del model
+                # del old_state_dict, new_state_dict
+                # vla.to(device_id)
+                # vla.model.to(device_id)
 
 
 if __name__ == "__main__":

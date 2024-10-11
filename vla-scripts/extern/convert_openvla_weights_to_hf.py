@@ -38,13 +38,15 @@ from prismatic.extern.hf.processing_prismatic import PrismaticImageProcessor, Pr
 @dataclass
 class HFConvertConfig:
     # fmt: off
-    openvla_model_path_or_id: Union[str, Path] = (                      # Path to Pretrained VLA (on disk or HF Hub)
-        "runs/prism-dinosiglip-224px+mx-oxe-magic-soup-plus+n8+b32+x7"
-    )
+    # openvla_model_path_or_id: Union[str, Path] = (                      # Path to Pretrained VLA (on disk or HF Hub)
+    #     "runs/prism-dinosiglip-224px+mx-oxe-magic-soup-plus+n8+b32+x7"
+    # )
+    openvla_model_path_or_id: Union[str, Path] = ( 
+        "/scratch/sombit_dey/gradual_dino_siglip/gradual_dino_siglip/" )              # Path to Pretrained VLA (on disk or HF Hub)
     output_hf_model_local_path: Path = Path(                            # Path to Local Path to save HF model
-        "hf-convert/openvla-7b"
+        "/scratch/sombit_dey/gradual_dino_siglip/gradual_dino_siglip/hf/"
     )
-    output_hf_model_hub_path: str = "openvla/openvla-7b"                # (Optional) Path to HF Hub Path to push
+    output_hf_model_hub_path: str = "gradual_dino_siglip_140k"                # (Optional) Path to HF Hub Path to push
                                                                         # model to
 
     # HF Hub Credentials (required for Gated Models like LLaMa-2)
@@ -254,18 +256,18 @@ def convert_openvla_weights_to_hf(cfg: HFConvertConfig) -> None:
     # Optional: Push Model to Hugging Face Hub
     #####################################################################################
 
-    # # Register AutoClasses
-    # OpenVLAConfig.register_for_auto_class()
-    # PrismaticImageProcessor.register_for_auto_class("AutoImageProcessor")
-    # PrismaticProcessor.register_for_auto_class("AutoProcessor")
-    # OpenVLAForActionPrediction.register_for_auto_class("AutoModelForVision2Seq")
+    # Register AutoClasses
+    OpenVLAConfig.register_for_auto_class()
+    PrismaticImageProcessor.register_for_auto_class("AutoImageProcessor")
+    PrismaticProcessor.register_for_auto_class("AutoProcessor")
+    OpenVLAForActionPrediction.register_for_auto_class("AutoModelForVision2Seq")
 
-    # # Push to HF Hub
-    # print("[*] Pushing Model & Processor to HF Hub")
-    # hf_config.push_to_hub(cfg.output_hf_model_hub_path)
-    # hf_model.push_to_hub(cfg.output_hf_model_hub_path, max_shard_size="7GB")
-    # hf_image_processor.push_to_hub(cfg.output_hf_model_hub_path)
-    # hf_processor.push_to_hub(cfg.output_hf_model_hub_path)
+    # Push to HF Hub
+    print("[*] Pushing Model & Processor to HF Hub")
+    hf_config.push_to_hub(cfg.output_hf_model_hub_path)
+    hf_model.push_to_hub(cfg.output_hf_model_hub_path, max_shard_size="7GB")
+    hf_image_processor.push_to_hub(cfg.output_hf_model_hub_path)
+    hf_processor.push_to_hub(cfg.output_hf_model_hub_path)
 
 
 if __name__ == "__main__":
